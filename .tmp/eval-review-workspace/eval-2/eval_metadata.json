@@ -1,4 +1,0 @@
-{
-  "eval_id": 2,
-  "prompt": "I need to render 300 animated astronaut-like agents in a three.js dashboard. The current prototype creates one SkinnedMesh and Skeleton per session and drops frames. Explain the redesign and the shader/rendering details that must not be missed."
-}
