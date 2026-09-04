@@ -65,6 +65,55 @@ export async function exists(p) {
   }
 }
 
+/** Only treat absolute paths that still resolve to directories as local workspaces. */
+export async function isDirectory(p) {
+  if (typeof p !== 'string' || !path.isAbsolute(p)) return false
+  try {
+    return (await fsp.stat(p)).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Resolve a workspace to its repository root, collapsing linked worktrees onto their common
+ * Git directory. A directory without a usable .git marker is not a local repository.
+ */
+export async function resolveGitProject(start) {
+  if (!(await isDirectory(start))) return null
+
+  let dir = path.resolve(start)
+  while (true) {
+    const marker = path.join(dir, '.git')
+    const stat = await fsp.stat(marker).catch(() => null)
+    if (stat?.isDirectory()) return { root: dir, worktree: '' }
+    if (stat?.isFile()) {
+      const text = await fsp.readFile(marker, 'utf8').catch(() => '')
+      const match = /^\s*gitdir:\s*(.+?)\s*$/im.exec(text)
+      if (match) {
+        const gitDir = path.resolve(dir, match[1])
+        const gitStat = await fsp.stat(gitDir).catch(() => null)
+        if (gitStat?.isDirectory()) {
+          let commonDir = gitDir
+          const common = await fsp.readFile(path.join(gitDir, 'commondir'), 'utf8').catch(() => '')
+          if (common.trim()) commonDir = path.resolve(gitDir, common.trim())
+          if (path.basename(commonDir) === '.git') {
+            return { root: path.dirname(commonDir), worktree: path.basename(dir) }
+          }
+          const worktreeMatch = /^(.*)[\\/]\.git[\\/]worktrees[\\/][^\\/]+$/.exec(gitDir)
+          if (worktreeMatch) return { root: worktreeMatch[1], worktree: path.basename(dir) }
+          return { root: dir, worktree: '' }
+        }
+      }
+      return null
+    }
+
+    const parent = path.dirname(dir)
+    if (parent === dir) return null
+    dir = parent
+  }
+}
+
 export const num = (v) => {
   const n = Number(v)
   return Number.isFinite(n) ? n : 0

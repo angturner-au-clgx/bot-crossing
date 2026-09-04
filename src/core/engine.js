@@ -379,9 +379,11 @@ export class Engine {
       this.renderer.setSize(bw, bh, false)
       this.composer?.setSize(bw, bh)
       this.tiltShift?.setSize(bw, bh)
-    this.tiltShift?.setCamera(this.camera)
+      this.tiltShift?.setCamera(this.camera)
       this.viewport = { ...this.viewport, bw, bh, scale: next }
       this.autoScaled = next < ceiling - 0.01
+      // Resize clears the drawing buffer; refill it before the browser can paint a blank frame.
+      this.renderFrame()
     }
   }
 

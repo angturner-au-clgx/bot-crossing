@@ -886,6 +886,26 @@ const TEMPLATE = `
 <div class="fps panel"></div>
 <div class="hint-pill panel"></div>
 
+<div class="help-bar panel" aria-label="Keyboard shortcuts">
+  <span class="help-bar-label">Shortcuts</span>
+  <span class="shortcut"><kbd>?</kbd><span>help</span></span>
+  <span class="shortcut"><kbd>H</kbd><span>hide UI</span></span>
+  <span class="shortcut"><kbd>S</kbd><span>settings</span></span>
+  <span class="shortcut"><kbd>N</kbd><span>next needing you</span></span>
+  <span class="shortcut"><kbd>Enter</kbd><span>open</span></span>
+  <span class="shortcut"><kbd>A</kbd><span>archive</span></span>
+  <span class="shortcut"><kbd>C</kbd><span>new conversation</span></span>
+  <span class="shortcut"><kbd>O</kbd><span>orbit</span></span>
+  <span class="shortcut"><kbd>Tab</kbd><span>planet</span></span>
+  <span class="shortcut"><kbd>L</kbd><span>time</span></span>
+  <span class="shortcut"><kbd>P</kbd><span>screenshot</span></span>
+  <span class="shortcut"><kbd>0</kbd><span>reset</span></span>
+  <span class="shortcut"><kbd>Esc</kbd><span>back</span></span>
+  <span class="shortcut"><kbd>arrows</kbd><span>move</span></span>
+  <span class="shortcut"><kbd>+ −</kbd><span>zoom</span></span>
+  <span class="shortcut"><kbd>${IS_MAC ? '⌘' : 'Ctrl'}\\</kbd><span>hide UI</span></span>
+</div>
+
 <div class="help">
   <div class="sheet panel">
     <h2>Bot Crossing</h2>

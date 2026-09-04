@@ -1,0 +1,4 @@
+{
+  "eval_id": 3,
+  "prompt": "Add a new local harness adapter for a coding-agent CLI to an existing Bot Crossing-style JavaScript app. The adapter should scan session files, open a session when possible, and archive it when the harness supports archiving. What should the adapter contract and safety checklist be?"
+}

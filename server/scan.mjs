@@ -6,7 +6,9 @@
  * from, and hands back a single list sorted by recency. Everything harness-specific lives
  * in `server/harnesses/` — see the README there.
  */
+import path from 'node:path'
 import { HARNESSES, detectedHarnesses, harnessById } from './harnesses/index.mjs'
+import { resolveGitProject } from './lib/fsutil.mjs'
 
 /**
  * A project's ground is keyed on its name, and a name is the last segment of its path — so two
@@ -31,7 +33,7 @@ function disambiguateProjects(threads) {
   for (const [name, paths] of pathsByName) {
     if (paths.size < 2) continue
     const list = [...paths]
-    const segments = list.map((p) => p.split('/').filter(Boolean))
+    const segments = list.map((p) => p.split(/[\\/]/).filter(Boolean))
     const deepest = Math.max(...segments.map((s) => s.length))
 
     // Take one more trailing segment until every path in the group reads differently. Paths
@@ -55,6 +57,22 @@ function disambiguateProjects(threads) {
   })
 }
 
+/** Historical sessions can outlive the checkout they were working in. */
+async function normaliseProjects(threads) {
+  const paths = [...new Set(threads.map((t) => t.projectPath))]
+  const resolved = new Map(await Promise.all(paths.map(async (projectPath) => [projectPath, await resolveGitProject(projectPath)])))
+  return threads.flatMap((thread) => {
+    const project = resolved.get(thread.projectPath)
+    if (!project) return []
+    return [{
+      ...thread,
+      project: path.basename(project.root) || thread.project || 'unknown',
+      projectPath: project.root,
+      worktree: thread.worktree || project.worktree,
+    }]
+  })
+}
+
 /**
  * Every thread from every detected harness.
  *
@@ -74,7 +92,7 @@ export async function scanThreads() {
       }
     })
   )
-  const threads = disambiguateProjects(lists.flat())
+  const threads = disambiguateProjects(await normaliseProjects(lists.flat()))
   threads.sort((a, b) => b.lastActivityAt - a.lastActivityAt)
   return threads
 }
@@ -101,7 +119,13 @@ export const openThread = (harnessId, ref) => dispatch(harnessId).openThread(ref
 
 export const newSession = (harnessId, dir) => dispatch(harnessId).newSession(dir)
 
-export const setThreadArchived = (harnessId, ref, archived) => dispatch(harnessId).setArchived(ref, archived)
+export const setThreadArchived = async (harnessId, ref, archived) => {
+  const harness = dispatch(harnessId)
+  if (typeof harness.setArchived !== 'function') {
+    return { ok: false, error: `${harness.name} does not support archiving` }
+  }
+  return harness.setArchived(ref, archived)
+}
 
 /**
  * When a harness's own app last started, used to tell an archive it has already read from

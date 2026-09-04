@@ -87,8 +87,8 @@ what earns a repo its own zone, and `lastActivityAt` is what sorts the whole map
 | `title` | string | Thread title. `'Untitled thread'` if the harness has none |
 | `preview` | string | First prompt, trimmed — shown on the thread card |
 | `project` | string | Repo/folder **name**. This is what claims a hex zone |
-| `projectPath` | string | Absolute path to the repo root |
-| `worktree` | string | Worktree name, or `''` |
+| `projectPath` | string | Absolute path to the local Git repo root, which must still exist |
+| `worktree` | string | Linked worktree name, or `''`; linked worktrees are grouped under their common repo root |
 | `cwd` | string | Where the thread is actually working |
 | `gitBranch` | string | Branch name, or `''` |
 | `model` / `effort` | string | Shown on the thread card |
@@ -125,6 +125,9 @@ Do not put a file handle, a class instance, or a secret in it.
   drops a trailing partial line, so `JSON.parse` never sees half a record.
 - **Expect malformed data.** A session being written *right now* is a normal thing to trip
   over. Skip that record and move on; do not throw the pass away.
+- **Only return local workspaces.** Threads whose `projectPath` is not an absolute path to an
+  existing Git repo are dropped before projects are disambiguated, so deleted checkouts and
+  generic folders do not become repo plots.
 - **Never widen `id` collisions.** The colony keys its archive list and saved layout on `id`.
   Two harnesses handing back the same id would merge two unrelated threads into one astronaut.
 
@@ -137,6 +140,17 @@ Verified on a real machine:
   (`%APPDATA%\Claude\claude-code-sessions\…` on Windows); CLI transcripts in
   `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl`; live processes in
   `~/.claude/sessions/*.json`. Implemented in `claude-code.mjs`.
+- **GitHub Copilot CLI** — one directory per session in
+  `~/.copilot/session-state/<session-id>/`, with `workspace.yaml` for workspace metadata and
+  `events.jsonl` for the bounded activity/preview read. Session ids are UUID directory names;
+  `pending-session:*` and other non-session directories are ignored. A live `inuse.<pid>.lock`
+  counts as running only while its PID still exists and the session's event file was updated
+  within the active window. Copilot has no local focus history, so `unread` is always false.
+  The adapter is read-only: it does not archive, open, or start sessions. The installed CLI can
+  resume with `copilot --resume=<session-id>` and start rooted at a directory with
+  `copilot -C <directory>`, but both are terminal commands rather than documented desktop deep
+  links. Bot Crossing leaves Open/New disabled instead of launching a shell or creating a second
+  terminal.
 - **Codex CLI** — transcripts in `~/.codex/sessions/YYYY/MM/DD/rollout-<iso>-<uuid>.jsonl`,
   with records shaped `{ timestamp, type, payload }`, and what looks like an index at
   `~/.codex/session_index.jsonl`. Not implemented yet.
@@ -170,6 +184,7 @@ a new one should clear too:
      console.log(t.length, "threads"); console.dir(t[0], { depth: 4 })
    })'
    ```
-4. `npm run dev`, then confirm the astronauts appear on the right plots, the thread card fills
-   in, and Open does what you expect.
-5. Archive one thread and check it shows as archived **in the harness's own UI**, not just here.
+4. `npm run dev`, then confirm the astronauts appear on the right plots and the thread card fills
+   in. For a read-only adapter such as Copilot CLI, `canOpen` and `canArchive` should be false.
+5. For an adapter with archive support, archive one thread and check it shows as archived **in
+   the harness's own UI**, not just here.

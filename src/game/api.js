@@ -15,12 +15,16 @@ const post = (url, payload) =>
 export const fetchThreads = () => req('/api/threads')
 export const fetchState = () => req('/api/state')
 
-export const saveState = (state) =>
-  req('/api/state', {
+export const saveState = async (state) => {
+  const current = await fetchState()
+  const archived = [...new Set([...(current.archived || []), ...(state.archived || [])])]
+  const archivedAt = { ...(state.archivedAt || {}), ...(current.archivedAt || {}) }
+  return req('/api/state', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(state),
+    body: JSON.stringify({ ...state, archived, archivedAt }),
   })
+}
 
 /**
  * Hand a thread back to whichever harness owns it — the desktop app comes forward on its own.

@@ -62,10 +62,15 @@ async function readState() {
  * silently drop every archive made since that page loaded.
  */
 async function writeState(next) {
+  const current = await readState()
+  // Archive intent only moves in one direction here. Merging it prevents a stale browser
+  // snapshot from erasing a bulk archive or an archive made in another tab.
+  const archived = [...new Set([...current.archived, ...asArray(next.archived)])]
+  const archivedAt = { ...asObject(next.archivedAt), ...asObject(current.archivedAt) }
   const state = {
     version: STATE_VERSION,
-    archived: asArray(next.archived),
-    archivedAt: asObject(next.archivedAt),
+    archived,
+    archivedAt,
     opened: asArray(next.opened),
     plots: asObject(next.plots),
     seen: asObject(next.seen),

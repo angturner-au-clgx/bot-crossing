@@ -1137,6 +1137,57 @@ body {
   font-weight: 600;
 }
 
+/* ── always-on shortcut rail ─────────────────────────────────────────────────────── */
+
+.help-bar {
+  position: absolute;
+  left: 76px;
+  right: calc(14px + var(--side));
+  bottom: 14px;
+  min-height: 40px;
+  padding: 6px 11px;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  white-space: nowrap;
+}
+
+.help-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.help-bar-label {
+  padding-right: 11px;
+  color: var(--dim);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex: none;
+}
+
+.shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  color: var(--muted);
+  font-size: 11.5px;
+  flex: none;
+}
+
+.shortcut + .shortcut {
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.shortcut kbd {
+  min-width: 0;
+  padding: 2px 5px;
+  font-size: 10px;
+}
+
 /* ── help ────────────────────────────────────────────────────────────────────────── */
 
 .help {
@@ -1320,6 +1371,9 @@ kbd {
   .rail {
     display: none;
   }
+  .help-bar {
+    left: 14px;
+  }
   .stats {
     gap: 5px;
   }
@@ -1332,6 +1386,13 @@ kbd {
 }
 
 @media (max-width: 600px) {
+  .help-bar {
+    bottom: 10px;
+    padding: 5px 8px;
+  }
+  .help-bar-label {
+    display: none;
+  }
   .topbar {
     height: 46px;
     padding: 0 6px 0 12px;

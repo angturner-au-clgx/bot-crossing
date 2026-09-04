@@ -1,0 +1,4 @@
+{
+  "eval_id": 1,
+  "prompt": "Design a small three.js ambient world where every GitHub Copilot CLI, Claude Code, Codex, and OpenCode session is an inhabitant and each repository owns a territory. Give me the implementation architecture and the session-state-to-behaviour mapping before writing code."
+}
