@@ -87,8 +87,8 @@ what earns a repo its own zone, and `lastActivityAt` is what sorts the whole map
 | `title` | string | Thread title. `'Untitled thread'` if the harness has none |
 | `preview` | string | First prompt, trimmed — shown on the thread card |
 | `project` | string | Repo/folder **name**. This is what claims a hex zone |
-| `projectPath` | string | Absolute path to the repo root |
-| `worktree` | string | Worktree name, or `''` |
+| `projectPath` | string | Absolute path to the local Git repo root, which must still exist |
+| `worktree` | string | Linked worktree name, or `''`; linked worktrees are grouped under their common repo root |
 | `cwd` | string | Where the thread is actually working |
 | `gitBranch` | string | Branch name, or `''` |
 | `model` / `effort` | string | Shown on the thread card |
@@ -125,6 +125,9 @@ Do not put a file handle, a class instance, or a secret in it.
   drops a trailing partial line, so `JSON.parse` never sees half a record.
 - **Expect malformed data.** A session being written *right now* is a normal thing to trip
   over. Skip that record and move on; do not throw the pass away.
+- **Only return local workspaces.** Threads whose `projectPath` is not an absolute path to an
+  existing Git repo are dropped before projects are disambiguated, so deleted checkouts and
+  generic folders do not become repo plots.
 - **Never widen `id` collisions.** The colony keys its archive list and saved layout on `id`.
   Two harnesses handing back the same id would merge two unrelated threads into one astronaut.
 
@@ -137,6 +140,40 @@ Verified on a real machine:
   (`%APPDATA%\Claude\claude-code-sessions\…` on Windows); CLI transcripts in
   `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl`; live processes in
   `~/.claude/sessions/*.json`. Implemented in `claude-code.mjs`.
+- **GitHub Copilot CLI** — one directory per session in
+  `~/.copilot/session-state/<session-id>/`, with `workspace.yaml` for workspace metadata and
+  `events.jsonl` for the bounded activity/preview read. Session ids are UUID directory names;
+  `pending-session:*` and other non-session directories are ignored. The adapter reads the
+  bounded head and tail of `events.jsonl`, tolerates malformed/partial lines, and caches parsed
+  metadata by file mtime and size. It reduces the observed lifecycle events as follows:
+  `user.message`, assistant messages/turn starts, and tool or external-tool execution events
+  begin active work;
+  `assistant.turn_end`, `session.task_complete`, `session.shutdown`, and `abort` end active work;
+  `session.error` marks an error; and `session.resume`/a later user message starts a fresh
+  lifecycle. A live `inuse.<pid>.lock` is required as well as a recent active event for
+  `running`, so an old file mtime cannot make a finished session look busy.
+  `permission.requested` (until its matching `permission.completed`) is normalized to
+  `unread`/waiting; explicitly recognized input/prompt request aliases are handled similarly.
+  A later user message, request completion, turn end, task completion, shutdown, or error clears
+  the waiting signal. Unknown event types are ignored conservatively. Copilot has no local focus
+  history, so this `unread` means a concrete pending request, not merely an unseen response.
+  The local records inspected on 2026-09-04 contained the permission pair but no separate
+  user-input request family; those aliases remain defensive and unverified. A normal completed
+  turn is intentionally only idle, because the event stream does not prove that it is waiting
+  for a human rather than simply finished.
+  The adapter is read-only: it does not archive, open, or start sessions. The installed CLI can
+  resume with `copilot --resume=<session-id>` and start rooted at a directory with
+  `copilot -C <directory>`, but both are terminal commands rather than documented desktop deep
+  links. Bot Crossing leaves Open/New disabled instead of launching a shell or creating a second
+  terminal.
+
+  ACP is not an observer transport. The capability investigation (2026-09-04, read-only; no
+  probe or child process launched) cross-checked the bundled evidence dated 2026-08-19: `copilot
+  --acp` is newline-delimited JSON-RPC over the stdio of a Copilot process the client launches.
+  The launching client owns that pipe, and existing `--server --stdio` children are likewise
+  private to their parent; there is no supported attach or REST endpoint for an arbitrary
+  existing session. Bot Crossing therefore uses the local event stream instead of a fake ACP
+  integration.
 - **Codex CLI** — transcripts in `~/.codex/sessions/YYYY/MM/DD/rollout-<iso>-<uuid>.jsonl`,
   with records shaped `{ timestamp, type, payload }`, and what looks like an index at
   `~/.codex/session_index.jsonl`. Not implemented yet.
@@ -170,6 +207,7 @@ a new one should clear too:
      console.log(t.length, "threads"); console.dir(t[0], { depth: 4 })
    })'
    ```
-4. `npm run dev`, then confirm the astronauts appear on the right plots, the thread card fills
-   in, and Open does what you expect.
-5. Archive one thread and check it shows as archived **in the harness's own UI**, not just here.
+4. `npm run dev`, then confirm the astronauts appear on the right plots and the thread card fills
+   in. For a read-only adapter such as Copilot CLI, `canOpen` and `canArchive` should be false.
+5. For an adapter with archive support, archive one thread and check it shows as archived **in
+   the harness's own UI**, not just here.

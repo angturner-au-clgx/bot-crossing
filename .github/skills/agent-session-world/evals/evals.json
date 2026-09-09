@@ -1,0 +1,40 @@
+{
+  "skill_name": "agent-session-world",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Design a small three.js ambient world where every GitHub Copilot CLI, Claude Code, Codex, and OpenCode session is an inhabitant and each repository owns a territory. Give me the implementation architecture and the session-state-to-behaviour mapping before writing code.",
+      "expected_output": "A concrete, harness-agnostic design covering the reader/adapter, mapper, renderer, and thin server; a single ordered state function; stable repository layout; and the key interaction and rendering constraints.",
+      "expectations": [
+        "The response explicitly includes GitHub Copilot CLI alongside Claude Code, Codex, and OpenCode.",
+        "The architecture separates a session reader, world-state mapper, renderer, and thin server.",
+        "The state mapping uses ordered precedence and includes errored, working, merged/finished, waiting, dormant, and ordinary states.",
+        "The layout is described as stable across polls and persisted across reloads."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I need to render 300 animated astronaut-like agents in a three.js dashboard. The current prototype creates one SkinnedMesh and Skeleton per session and drops frames. Explain the redesign and the shader/rendering details that must not be missed.",
+      "expected_output": "A performance-focused redesign that bakes clips into a bone-matrix texture, renders the crowd through one InstancedMesh, skins in the vertex shader before instance transforms, and preserves the related attachment, loop, quality, and post-processing invariants.",
+      "expectations": [
+        "The response recommends animation-texture/bone-matrix baking instead of one CPU skeleton per agent.",
+        "The response recommends one instanced crowd draw and says skinning must happen before the per-instance transform such as instanceMatrix.",
+        "The response warns that non-looping clips must be sampled just short of their duration so their final pose holds.",
+        "The response covers render scale separate from device pixel ratio and an adaptive governor that changes gradually rather than per frame.",
+        "The response says depth-based tilt-shift must use the depth written by the current post-processing buffer and that disabling effects should dispose render targets."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Add a new local harness adapter for a coding-agent CLI to an existing Bot Crossing-style JavaScript app. The adapter should scan session files, open a session when possible, and archive it when the harness supports archiving. What should the adapter contract and safety checklist be?",
+      "expected_output": "A minimal adapter contract and checklist that keeps harness-specific formats isolated, reads bounded transcript heads, validates opaque ids and paths, uses argument arrays for openers, defaults to read-only, and performs only a verified atomic archive-field write.",
+      "expectations": [
+        "The response keeps adapter-specific knowledge in one module and says the scanner, API, and renderer should not need harness-specific changes.",
+        "The response requires stable globally unique thread ids and an opaque serializable ref.",
+        "The response requires bounded head reads, mtime caching, malformed-record tolerance, and process/activity checks where relevant.",
+        "The response requires read-only behavior by default, verification of the record id, and a temp-file-plus-rename atomic write for the single archive flag.",
+        "The response requires validated ids and paths plus argument arrays rather than shell command strings."
+      ]
+    }
+  ]
+}

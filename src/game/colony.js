@@ -146,6 +146,7 @@ export class Colony {
     this.plotGroup = new THREE.Group()
     this.labelGroup = new THREE.Group()
     scene.add(this.plotGroup, this.labelGroup)
+    this._navigationDirty = true
 
     // Dismissing the HUD has to survive a poll: labels are chrome, and a scan landing while
     // everything is hidden must not quietly put them back on screen.
@@ -155,6 +156,7 @@ export class Colony {
     this._dustTint = new THREE.Color(this.planet.ground.high)
     this._c = new THREE.Color()
     this.stats = { agents: 0, projects: 0, working: 0, waiting: 0, blocked: 0, done: 0 }
+    this._visualSignature = ''
 
     this._buildTerrain()
   }
@@ -210,6 +212,7 @@ export class Colony {
     this.scatterGroup = createScatter(this.planet, this.settings.get('scatterDensity'), clear)
     this.worldGroup.add(this.scatterGroup)
     this._scatterFootprint = this._plotFootprint()
+    this._navigationDirty = true
     // The crew routes around scatter, so a new scatter is a new navigation grid.
     if (this.nav) this._rebuildNavigation()
   }
@@ -260,6 +263,27 @@ export class Colony {
   setThreads(threads, archivedIds = new Set()) {
     const now = Date.now()
     const live = threads.filter((t) => !t.archived && !archivedIds.has(t.id))
+    const visualSignature = live
+      .map((thread) => `${thread.id}\u0000${thread.project || ''}\u0000${thread.createdAt || 0}\u0000${statusFor(thread, now)}`)
+      .sort()
+      .join('|')
+    const threadMap = new Map(live.map((t) => [t.id, t]))
+
+    // Activity timestamps and transcript sizes change often without changing anything in the
+    // world. Refresh the data used by the sidebar, but leave the scene and navigation alone.
+    if (visualSignature === this._visualSignature) {
+      this.threads = threadMap
+      for (const agent of this.astronauts.agents) {
+        const thread = threadMap.get(agent.id)
+        if (thread) agent.thread = thread
+      }
+      for (const entry of this.astronauts.roster || []) {
+        const thread = threadMap.get(entry.id)
+        if (thread) entry.thread = thread
+      }
+      return this.stats
+    }
+    this._visualSignature = visualSignature
 
     // Group by repo, biggest project first so the busiest work lands nearest the middle.
     const byProject = new Map()
@@ -290,7 +314,7 @@ export class Colony {
       const plot = this.plots.get(name)
       if (!plot) continue
       // Oldest thread first, so a given session keeps its slot as siblings come and go.
-      list.sort((a, b) => a.createdAt - b.createdAt)
+      list.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
 
       list.forEach((thread, i) => {
         const status = statusFor(thread, now)
@@ -320,7 +344,7 @@ export class Colony {
       if (!seenBuildings.has(id)) this._removeBuilding(id, entry)
     }
 
-    this.threads = new Map(live.map((t) => [t.id, t]))
+    this.threads = threadMap
     this.urgentPlots = urgent
     this.activePlots = active
     this._rebuildNavigation()
@@ -360,6 +384,7 @@ export class Colony {
       this.usedAccents.delete(plot.accent)
       plot.dispose()
       this.plots.delete(name)
+      this._navigationDirty = true
     }
 
     projects.forEach(([name], index) => {
@@ -376,6 +401,7 @@ export class Colony {
       label.position.set(plot.labelAnchor.x, 3.2, plot.labelAnchor.z)
       plot.label = label
       this.labelGroup.add(label)
+      this._navigationDirty = true
     })
 
     this.plotOrder = [...this.plots.values()]
@@ -440,6 +466,7 @@ export class Colony {
       this.worldGroup.add(mesh)
       entry = { mesh, plot: plot.id, slot: index, progress: 0, target, retiring: false }
       this.buildings.set(thread.id, entry)
+      this._navigationDirty = true
     } else {
       // Where this building belongs *now*. Comparing the world position rather than the
       // plot id and slot number is what catches a zone that was rebuilt underneath it: the
@@ -450,6 +477,7 @@ export class Colony {
         entry.plot = plot.id
         entry.slot = index
         entry.mesh.position.copy(want)
+        this._navigationDirty = true
       }
     }
 
@@ -462,6 +490,7 @@ export class Colony {
   _removeBuilding(id, entry) {
     // Wind the reveal back down, then take it out — a building that vanishes mid-frame
     // reads as a glitch, one that sinks reads as being packed up.
+    if (!entry.retiring) this._navigationDirty = true
     entry.retiring = true
     entry.target = 0
     if (entry.progress <= 0.02) {
@@ -482,6 +511,7 @@ export class Colony {
    * of buildings, which is exactly where the crew needs to walk.
    */
   _rebuildNavigation() {
+    if (!this.nav || !this._navigationDirty) return
     const obstacles = []
     for (const entry of this.buildings.values()) {
       if (entry.retiring) continue
@@ -521,6 +551,7 @@ export class Colony {
     const ship = shipPosition()
     obstacles.push({ x: ship.x, z: ship.z, r: 3.4 + AGENT_RADIUS })
     this.nav.rebuild(obstacles)
+    this._navigationDirty = false
   }
 
   /** The plot under a world point. On a hex lattice the nearest cell centre is the cell. */

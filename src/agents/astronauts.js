@@ -114,6 +114,13 @@ const P = {
   gripRz: Math.PI,
 }
 
+const ACCESSORY_DETAIL = {
+  low: { helmet: [16, 11], visor: [20, 14], face: [16, 10], sphere: [6, 4], antenna: 4, box: 2, hammer: 6 },
+  medium: { helmet: [24, 16], visor: [28, 18], face: [24, 14], sphere: [8, 5], antenna: 6, box: 3, hammer: 8 },
+  high: { helmet: [32, 22], visor: [36, 24], face: [32, 18], sphere: [10, 6], antenna: 8, box: 4, hammer: 10 },
+  ultra: { helmet: [40, 28], visor: [44, 30], face: [40, 22], sphere: [12, 8], antenna: 10, box: 5, hammer: 12 },
+}
+
 export class Astronauts {
   constructor(scene, settings) {
     this.scene = scene
@@ -151,6 +158,7 @@ export class Astronauts {
   _buildMeshes(capacity) {
     this.capacity = capacity
     const parts = (this.parts = {})
+    const detail = ACCESSORY_DETAIL[this.settings.get('textureQuality')] || ACCESSORY_DETAIL.medium
 
     // The suit is painted fabric-over-hardshell: fairly rough, not metallic, but glossy
     // enough on the helmet to catch a highlight off the environment map.
@@ -162,39 +170,51 @@ export class Astronauts {
     const R = P.helmetR
 
     // Helmet shell.
-    const helmetGeo = new THREE.SphereGeometry(R, 16, 11)
-    parts.helmet = this._mesh(helmetGeo, suit(0.26, { metalness: 0.03, envMapIntensity: 1.35 }), capacity, false)
+    const helmetGeo = new THREE.SphereGeometry(R, detail.helmet[0], detail.helmet[1])
+    parts.helmet = this._mesh(
+      helmetGeo,
+      new THREE.MeshPhysicalMaterial({
+        color: 0xffffff,
+        roughness: 0.24,
+        metalness: 0.03,
+        clearcoat: 0.3,
+        clearcoatRoughness: 0.16,
+        envMapIntensity: 1.35,
+      }),
+      capacity,
+      false
+    )
 
     // Visor: a dark screen wrapped onto the helmet. The patch itself is a rectangle in UV
     // space, so its rounded silhouette is cut in the fragment shader instead — a squircle
     // SDF, which gives soft corners a rectangular patch can never have, and lets the white
     // helmet show through where the screen ends.
-    const visorGeo = sphereCap(R * 1.032, 2.45, Math.PI * 0.62, 20, 14)
+    const visorGeo = sphereCap(R * 1.032, 2.45, Math.PI * 0.62, detail.visor[0], detail.visor[1])
     parts.visor = this._mesh(visorGeo, this._visorMaterial(), capacity, false)
 
     // Backpack + a life-support cylinder on each side.
-    const packGeo = roundedBox(R * 0.89, R * 0.98, R * 0.55, R * 0.19)
+    const packGeo = roundedBox(R * 0.89, R * 0.98, R * 0.55, R * 0.19, detail.box)
     parts.pack = this._mesh(packGeo, suit(0.66), capacity, true)
 
-    const antGeo = new THREE.CylinderGeometry(R * 0.042, R * 0.053, R * 0.57, 4)
+    const antGeo = new THREE.CylinderGeometry(R * 0.042, R * 0.053, R * 0.57, detail.antenna)
     antGeo.translate(0, R * 0.285, 0)
     parts.antenna = this._mesh(antGeo, suit(0.24, { metalness: 0.95 }), capacity, false)
 
     // The blinking bits: antenna tip and chest lamp. Unlit and pushed past 1.0 so they
     // are the things the bloom pass picks out at night.
     const glowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: true })
-    parts.tip = this._mesh(new THREE.SphereGeometry(R * 0.125, 6, 4), glowMat, capacity, false)
-    parts.lamp = this._mesh(new THREE.SphereGeometry(R * 0.16, 6, 5), glowMat.clone(), capacity, false)
+    parts.tip = this._mesh(new THREE.SphereGeometry(R * 0.125, detail.sphere[0], detail.sphere[1]), glowMat, capacity, false)
+    parts.lamp = this._mesh(new THREE.SphereGeometry(R * 0.16, detail.sphere[0], detail.sphere[1]), glowMat.clone(), capacity, false)
 
     // The hammer, held in the right hand while a thread is running. Wood and steel rather
     // than suit white, so it reads as a tool at the distance the colony is watched from.
-    parts.hammer = this._mesh(hammerGeometry(R), suit(0.62, { vertexColors: true }), capacity, true)
+    parts.hammer = this._mesh(hammerGeometry(R, detail.hammer, detail.box), suit(0.62, { vertexColors: true }), capacity, true)
 
     // Face: the features only, drawn straight onto the visor beneath. Built as a sphere cap
     // a hair larger than the visor, so it lies exactly on the curved surface instead of
     // clipping through it — a flat plane at this radius sinks inside the sphere and the
     // features disappear.
-    const faceGeo = sphereCap(P.helmetR * 1.047, 1.72, 0.98, 16, 10)
+    const faceGeo = sphereCap(P.helmetR * 1.047, 1.72, 0.98, detail.face[0], detail.face[1])
     parts.face = this._mesh(faceGeo, this._faceMaterial(), capacity, false)
     this._attachFrameAttribute(parts.face, capacity)
 
@@ -238,7 +258,14 @@ export class Astronauts {
     }
 
     const material = decorateSkinned(
-      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.68, metalness: 0.04 }),
+      new THREE.MeshPhysicalMaterial({
+        color: 0xffffff,
+        roughness: 0.64,
+        metalness: 0.04,
+        clearcoat: 0.08,
+        clearcoatRoughness: 0.34,
+        envMapIntensity: 0.8,
+      }),
       this.crewUniforms
     )
 
@@ -284,6 +311,37 @@ export class Astronauts {
     this.crew = null
   }
 
+  _disposeParts() {
+    for (const mesh of Object.values(this.parts || {})) {
+      this.group.remove(mesh)
+      mesh.geometry.dispose()
+      mesh.material.dispose()
+    }
+    for (const ringMesh of [this.hoverRing, this.selectRing]) {
+      if (!ringMesh) continue
+      this.group.remove(ringMesh)
+      ringMesh.geometry.dispose()
+      ringMesh.material.dispose()
+    }
+  }
+
+  _rebuildParts(capacity = this.capacity) {
+    const hoverVisible = this.hoverRing?.visible || false
+    const hoverPosition = this.hoverRing?.position.clone()
+    const selectVisible = this.selectRing?.visible || false
+    const selectPosition = this.selectRing?.position.clone()
+    this._disposeParts()
+    this._buildMeshes(capacity)
+    this.hoverRing.visible = hoverVisible
+    this.selectRing.visible = selectVisible
+    if (hoverPosition) this.hoverRing.position.copy(hoverPosition)
+    if (selectPosition) this.selectRing.position.copy(selectPosition)
+    for (const agent of this.agents) {
+      agent.index = -1
+      agent.colorDirty = true
+    }
+  }
+
   _mesh(geo, mat, count, castShadow) {
     const mesh = new THREE.InstancedMesh(geo, mat, count)
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
@@ -302,7 +360,14 @@ export class Astronauts {
    * what is helmet, and a thin band just inside the edge is lifted to read as a bezel.
    */
   _visorMaterial() {
-    const mat = new THREE.MeshStandardMaterial({ color: 0x08090e, roughness: 0.3, metalness: 0.16 })
+    const mat = new THREE.MeshPhysicalMaterial({
+      color: 0x08090e,
+      roughness: 0.22,
+      metalness: 0.2,
+      clearcoat: 0.58,
+      clearcoatRoughness: 0.1,
+      envMapIntensity: 1.5,
+    })
     mat.onBeforeCompile = (shader) => {
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `#include <common>\n varying vec2 vVisorUv;`)
@@ -422,8 +487,7 @@ export class Astronauts {
     if (changed.has('textureQuality')) {
       this.faceTexture.dispose()
       this.faceTexture = buildFaceAtlas(Math.min(this.settings.textureSize, 512))
-      this.parts.face.material.map = this.faceTexture
-      this.parts.face.material.needsUpdate = true
+      this._rebuildParts()
     }
     if (changed.has('maxAgents')) {
       // The instanced buffers are sized at build time, so a bigger roster needs new ones.
@@ -431,19 +495,9 @@ export class Astronauts {
       if (wanted !== this.capacity) {
         const rig = this.rig
         this._disposeCrew()
-        for (const mesh of Object.values(this.parts)) {
-          this.group.remove(mesh)
-          mesh.geometry.dispose()
-          mesh.material.dispose()
-        }
-        this.group.remove(this.hoverRing, this.selectRing)
-        this._buildMeshes(wanted)
+        this._rebuildParts(wanted)
         this.rig = null
         this.setRig(rig)
-        for (const agent of this.agents) {
-          agent.index = -1
-          agent.colorDirty = true
-        }
       }
       this.roster && this.setRoster(this.roster)
     }
@@ -1273,10 +1327,7 @@ export class Astronauts {
   }
 
   dispose() {
-    for (const mesh of Object.values(this.parts)) {
-      mesh.geometry.dispose()
-      mesh.material.dispose()
-    }
+    this._disposeParts()
     this._disposeCrew()
     // The bone texture is the rig's, not this instance's — the rig outlives any one colony.
     this.faceTexture.dispose()
@@ -1315,15 +1366,15 @@ function angleDamp(current, target, lambda, dt) {
  * Coloured per vertex rather than per instance, because the two halves are different
  * materials and the instance colour is already spoken for by the suit palette.
  */
-function hammerGeometry(R) {
-  const shaft = new THREE.CylinderGeometry(R * 0.055, R * 0.07, R * 1.15, 6)
+function hammerGeometry(R, segments = 8, boxSegments = 3) {
+  const shaft = new THREE.CylinderGeometry(R * 0.055, R * 0.07, R * 1.15, segments)
   shaft.translate(0, R * 0.24, 0)
   paint(shaft, 0x8a6440)
 
   // The head crosses the shaft. It is authored long along X, which is already square to the
   // shaft's Y — turning it a quarter turn about Z, as this used to, stood the head *up in
   // line with* the handle, so the astronaut appeared to be swinging a mallet end-on.
-  const head = roundedBox(R * 0.5, R * 0.19, R * 0.19, R * 0.05)
+  const head = roundedBox(R * 0.5, R * 0.19, R * 0.19, R * 0.05, boxSegments)
   head.translate(0, R * 0.82, 0)
   paint(head, 0x9aa0a8)
 
@@ -1346,8 +1397,8 @@ function paint(geo, hex) {
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
 }
 
-function roundedBox(w, h, d, r) {
-  const geo = new THREE.BoxGeometry(w, h, d, 2, 2, 2)
+function roundedBox(w, h, d, r, segments = 2) {
+  const geo = new THREE.BoxGeometry(w, h, d, segments, segments, segments)
   const pos = geo.attributes.position
   const v = new THREE.Vector3()
   const half = new THREE.Vector3(w / 2 - r, h / 2 - r, d / 2 - r)

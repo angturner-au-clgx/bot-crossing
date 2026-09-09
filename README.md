@@ -24,11 +24,10 @@ second process. For a built version, `npm start` (build + serve) or `npm run ser
 `dist/` already exists. Binds to `127.0.0.1` by default, and answers only its own page — see
 [Keeping it local](#keeping-it-local).
 
-**macOS, Linux and Windows.** Opening a thread, revealing a folder and starting a new session
-all go through a `harness://` deep link handed to the OS opener — `open(1)` on macOS,
-`xdg-open` on Linux, ShellExecute on Windows. The scanning half was portable already. Note that
-the deep link needs a desktop app registered for that scheme, so on Linux the folder buttons
-work while opening a thread has nothing to reach yet.
+**macOS, Linux and Windows.** Harnesses may provide an opener for threads or new sessions;
+revealing a folder always goes through the OS opener — `open(1)` on macOS, `xdg-open` on Linux,
+ShellExecute on Windows. The scanning half is portable already. Actions are disabled when a
+harness has no safe deep link or launch API.
 
 ## Which harnesses work
 
@@ -39,6 +38,7 @@ somebody writing that adapter.
 | Harness | Status |
 | --- | --- |
 | **[Claude Code](https://claude.com/claude-code)** (Anthropic) | ✅ **Supported** — desktop app and CLI, including worktrees, live-process detection and archiving |
+| **[GitHub Copilot CLI](https://github.com/features/copilot/cli)** (GitHub) | ✅ **Supported** — local session discovery, bounded previews, workspace metadata and live-session detection; read-only, with Open/New/Archive unavailable |
 | [Codex CLI](https://developers.openai.com/codex/cli) (OpenAI) | ⬜ Not yet — transcripts found at `~/.codex/sessions/`, [notes here](server/harnesses/README.md#starting-points) |
 | [OpenCode](https://opencode.ai) | ⬜ Not yet |
 | [Antigravity CLI](https://antigravity.google) (Google) | ⬜ Not yet — the successor to Gemini CLI, which Google stopped serving individual accounts on 18 June 2026 |
@@ -175,10 +175,9 @@ into the same repo. Picking somebody is also picking the zone they are standing 
 
 **The repo**, at the top, whether or not anybody is selected:
 
-- **New conversation** (`C`) starts a fresh thread in that folder. It is the same
-  `claude://code/new?folder=…` deep link Finder's "New Claude Code Session Here" quick
-  action uses, so the desktop app opens an empty session with the repo as its workspace —
-  nothing is resumed and nothing is written.
+- **New conversation** (`C`) starts a fresh thread in that folder when the selected harness
+  provides a safe launcher. Claude Code uses the same `claude://code/new?folder=…` deep link
+  Finder's "New Claude Code Session Here" quick action uses; unsupported harnesses disable it.
 - **Finder** (Explorer on Windows) opens the folder, **Copy path** copies it.
 - Underneath, everything running in that repo, whoever wants something first. Clicking one
   flies to its astronaut and selects it.
@@ -191,28 +190,29 @@ flipping to its left rather than sliding under the sidebar, and never leaving th
 It is moved with a transform rather than with `left`/`top`, the one geometric change a
 browser makes without touching layout, so following a walking astronaut costs nothing.
 
-- **Open** hands the thread back to Claude Code and the desktop app comes forward.
-- **Archive** sets `isArchived` on Claude Code's own session record — the thread lands in
-  Claude Code's Archived list, not just here — and the astronaut walks back up the ramp and
-  boards the ship.
+- **Open** hands the thread back to its harness when that harness exposes a safe opener.
+- **Archive** is available only when the harness exposes a safe archive field or API. Claude
+  Code sets `isArchived` in its own session record; Copilot CLI has no supported archive
+  mutation, so its control is disabled.
 
 Only one button in the panel is ever the accent colour: whichever action is the immediate
 one. `Esc` steps outward a notch at a time — the thread first, then its zone.
 
-Opening uses `claude://claude.ai/epitaxy/<local_…>`, which *navigates* the desktop app to a
-thread it already has. `claude://resume` is the fallback for threads that only exist as a CLI
-transcript: it *imports* the transcript, which creates a second untitled session and rewrites
-the `.jsonl`, so it is only ever used when there is nothing to navigate to.
+Opening uses the deep link or opener supplied by the harness adapter. Claude Code uses
+`claude://claude.ai/epitaxy/<local_…>` and its `claude://resume` fallback. Copilot CLI documents
+`copilot --resume=<session-id>` for a terminal, not a desktop deep link; Bot Crossing therefore
+does not simulate an opener for it.
 
 Archiving carries a deliberate one-writer discipline: the browser owns
-`data/colony.json` and PUTs it whole, `/api/archive` only touches Claude Code's records. If
+`data/colony.json` and PUTs it whole, `/api/archive` only touches a harness record when that
+harness explicitly supports it. If
 both wrote it, a save from a page holding older state would silently drop every archive made
 since that page loaded. Claude Code also rewrites its session records from memory and can
 stomp the flag, so the colony re-asserts it on every scan — an archive that gets stomped comes
 back within one poll.
 
-Nothing is ever written to your Claude Code data except that one `isArchived` field. The
-folder buttons only ever hand a path to `open`.
+Nothing is ever written to Copilot CLI data. For Claude Code, the only harness write is the
+single `isArchived` field; folder buttons only ever hand a path to `open`.
 
 The deep links above are the **Claude Code adapter's** business, not the colony's — another
 harness plugs its own in, and a harness with no deep link simply greys the button out. See
@@ -478,6 +478,10 @@ The knobs that actually matter, and why:
   targets. Turning it off on a weak machine gives the memory back.
 - **Shadows** track the camera rather than covering the whole colony, which is worth roughly a
   doubling of effective resolution.
+- **Texture quality** also controls close-up astronaut geometry. Medium, High and Ultra use
+  progressively denser helmet, visor, face, antenna, lamp and tool meshes, while Potato and
+  Low keep the lighter silhouettes. Rebuilding those shared instanced buffers on a setting
+  change preserves the crowd's draw-call shape rather than creating one mesh per astronaut.
 
 What keeps it cheap at rest:
 
@@ -596,7 +600,7 @@ What it touches on disk, in full:
 | | |
 | --- | --- |
 | Reads | Your harness's own session records and transcripts |
-| Writes | `data/colony.json`, and **one** `isArchived` field per archived thread |
+| Writes | `data/colony.json`, and only explicitly supported harness archive fields |
 | Sends | Nothing. No network calls, no telemetry, no account |
 
 `data/colony.json` holds the names and paths of the repos you work in, so it is gitignored —

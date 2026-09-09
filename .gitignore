@@ -18,3 +18,6 @@ assets-src
 
 # Local capture output — not part of the project.
 recordings
+
+# Session scratch files and generated analysis artifacts.
+.tmp/

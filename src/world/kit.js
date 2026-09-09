@@ -162,7 +162,7 @@ function findAtlas(scene) {
     texture.magFilter = THREE.LinearFilter
     texture.minFilter = THREE.LinearMipmapLinearFilter
     texture.generateMipmaps = true
-    texture.anisotropy = 4
+    texture.anisotropy = 8
   }
   return texture
 }

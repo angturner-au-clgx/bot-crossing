@@ -475,11 +475,14 @@ export function createBuilding({ seed = 1, accent = 0xc96442, kind = null } = {}
   }
 
   const material = decorate(
-    new THREE.MeshStandardMaterial({
+    new THREE.MeshPhysicalMaterial({
       map: atlasTexture(),
       // Roughness and metalness arrive per atlas cell; these are only the fallback values.
       roughness: 0.6,
       metalness: 0,
+      envMapIntensity: 1.15,
+      clearcoat: 0.14,
+      clearcoatRoughness: 0.22,
       emissive: 0x000000, // additions in the shader are the only emission
       // Single-sided, unlike the procedural buildings this replaced.
       //

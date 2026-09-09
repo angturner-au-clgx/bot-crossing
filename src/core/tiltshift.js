@@ -34,6 +34,11 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 
 /** The widest the blur ever gets, as a share of frame height, at full strength. */
 const MAX_RADIUS = 0.02
+/** Keep close-ups readable instead of collapsing the focus band as the camera approaches. */
+const MIN_FOCUS_RANGE = 10
+/** Fade the miniature effect out for close-ups, then restore it for the wide view. */
+const CLOSE_UP_START = 6
+const CLOSE_UP_END = 24
 
 const common = {
   uniforms: {
@@ -180,13 +185,14 @@ export function createTiltShift() {
   let focusDistance = 30
 
   const applyDerived = () => {
-    set('uMaxRadius', amount * MAX_RADIUS * frameHeight)
+    const closeUp = THREE.MathUtils.smoothstep(focusDistance, CLOSE_UP_START, CLOSE_UP_END)
+    set('uMaxRadius', amount * MAX_RADIUS * frameHeight * closeUp)
     set('uFocusDistance', focusDistance)
     // The sharp slab is a share of how far away you are focused rather than a fixed depth,
-    // so pulling the camera back does not drop the whole colony out of focus at once. Turning
-    // the effect up makes it shallower as well as blurrier, which is what a wider aperture
-    // actually does — doing only one of the two reads as a smeared photograph.
-    set('uFocusRange', focusDistance * (0.8 + (0.08 - 0.8) * amount))
+    // so pulling the camera back does not drop the whole colony out of focus at once. Keep a
+    // readable minimum for close-ups: without it, the band collapses at the nearest zoom and
+    // makes the astronaut or building under the cursor look smeared.
+    set('uFocusRange', Math.max(MIN_FOCUS_RANGE, focusDistance * (0.8 + (0.08 - 0.8) * amount)))
   }
 
   return {
