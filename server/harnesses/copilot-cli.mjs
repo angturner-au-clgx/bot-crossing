@@ -3,7 +3,9 @@
  *
  * Copilot CLI keeps one directory per session under ~/.copilot/session-state. The
  * workspace YAML is the cheap metadata index; events.jsonl is bounded to the head
- * and tail so discovery never loads a complete transcript.
+ * and tail so discovery never loads a complete transcript. ACP is not used here:
+ * an ACP connection owns the stdio of the Copilot process it launches and cannot
+ * observe an arbitrary existing session.
  */
 import fsp from 'node:fs/promises'
 import os from 'node:os'
@@ -17,6 +19,27 @@ const TAIL_BYTES = 96 * 1024
 const ACTIVE_WINDOW_MS = 30 * 60 * 1000
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const LOCK = /^inuse\.(\d+)\.lock$/
+const WAITING_EVENTS = new Set([
+  'permission.requested',
+  'input.requested',
+  'input.requested_for_user',
+  'prompt.requested',
+  'user.input.requested',
+])
+const WAITING_COMPLETION_EVENTS = new Set([
+  'input.completed',
+  'input.responded',
+  'prompt.completed',
+  'user.input.completed',
+])
+const ACTIVE_EVENTS = new Set([
+  'assistant.message',
+  'assistant.turn_start',
+  'tool.execution_start',
+  'tool.execution_complete',
+  'external_tool.requested',
+  'external_tool.completed',
+])
 
 function scalar(value) {
   const text = String(value || '').trim()
@@ -76,33 +99,63 @@ async function readTail(file, bytes, size) {
 
 const metaCache = new Map()
 
-async function eventMeta(entry) {
-  const cached = metaCache.get(entry.id)
-  if (cached && cached.mtime === entry.mtime && cached.size === entry.size) return cached.meta
+function eventTime(record) {
+  const value = record?.timestamp ?? record?.data?.startTime
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+  const parsed = Date.parse(String(value || ''))
+  return Number.isNaN(parsed) ? 0 : parsed
+}
 
-  let records = []
-  try {
-    const head = await readHead(entry.file, HEAD_BYTES)
-    const tail = entry.size > HEAD_BYTES ? await readTail(entry.file, TAIL_BYTES, entry.size) : ''
-    records = [...jsonLines(head), ...jsonLines(tail)]
-  } catch {
-    records = []
-  }
+function eventKey(record) {
+  if (record?.id) return `id:${record.id}`
+  const data = record?.data && typeof record.data === 'object' ? record.data : {}
+  return [
+    record?.type || '',
+    record?.timestamp || '',
+    data.requestId || '',
+    data.toolCallId || '',
+    data.turnId || '',
+  ].join('\u0000')
+}
 
+function mergeRecords(head, tail) {
+  const seen = new Set()
+  return [...head, ...tail].filter((record) => {
+    const key = eventKey(record)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function requestKey(record) {
+  const data = record?.data && typeof record.data === 'object' ? record.data : {}
+  return data.requestId || data.toolCallId || record?.type
+}
+
+/**
+ * Reduce known Copilot JSONL lifecycle events to the normalized state used by the scanner.
+ * Unknown event types are deliberately ignored rather than treated as prompts or failures.
+ */
+export function deriveEventState(records) {
   const meta = {
     firstPrompt: '',
     model: '',
     effort: '',
     startedAt: 0,
+    lastEventAt: 0,
+    lifecycle: 'unknown',
+    waiting: false,
     hasError: false,
   }
-  let lastError = 0
-  let lastShutdown = 0
+  const pendingRequests = new Set()
+  let lastErrorAt = 0
+  let lastTerminalAt = 0
 
   for (const record of records) {
     const data = record?.data && typeof record.data === 'object' ? record.data : {}
-    const timestamp = Date.parse(record?.timestamp || data.startTime || '')
-    const at = Number.isNaN(timestamp) ? 0 : timestamp
+    const at = eventTime(record)
+    if (at > meta.lastEventAt) meta.lastEventAt = at
     if (!meta.startedAt && record?.type === 'session.start') meta.startedAt = at
     if (!meta.firstPrompt && record?.type === 'user.message') {
       const prompt = cleanPrompt(promptText(data.content))
@@ -111,15 +164,67 @@ async function eventMeta(entry) {
     if (record?.type === 'session.start') {
       meta.model = meta.model || data.selectedModel || ''
       meta.effort = meta.effort || data.reasoningEffort || ''
-    }
-    if (record?.type === 'session.model_change') {
+      meta.lifecycle = 'idle'
+      meta.hasError = false
+      pendingRequests.clear()
+    } else if (record?.type === 'session.resume') {
+      meta.model = data.selectedModel || meta.model
+      meta.effort = data.reasoningEffort || meta.effort
+      meta.lifecycle = 'idle'
+      meta.hasError = false
+      pendingRequests.clear()
+    } else if (record?.type === 'session.model_change') {
       meta.model = data.newModel || meta.model
       meta.effort = data.reasoningEffort || meta.effort
+    } else if (record?.type === 'user.message') {
+      meta.lifecycle = 'active'
+      meta.hasError = false
+      pendingRequests.clear()
+    } else if (ACTIVE_EVENTS.has(record?.type)) {
+      meta.lifecycle = 'active'
+      meta.hasError = false
+    } else if (record?.type === 'assistant.turn_end') {
+      meta.lifecycle = 'idle'
+      pendingRequests.clear()
+    } else if (WAITING_EVENTS.has(record?.type)) {
+      pendingRequests.add(requestKey(record))
+      meta.lifecycle = 'waiting'
+    } else if (record?.type === 'permission.completed' || WAITING_COMPLETION_EVENTS.has(record?.type)) {
+      pendingRequests.delete(requestKey(record))
+      meta.lifecycle = pendingRequests.size ? 'waiting' : 'active'
+    } else if (record?.type === 'session.task_complete' || record?.type === 'session.shutdown' || record?.type === 'abort') {
+      pendingRequests.clear()
+      meta.lifecycle = 'idle'
+    } else if (record?.type === 'session.error') {
+      pendingRequests.clear()
+      meta.lifecycle = 'idle'
+      meta.hasError = true
+      lastErrorAt = at || lastErrorAt || 1
     }
-    if (record?.type === 'session.error') lastError = at || lastError || 1
-    if (record?.type === 'session.shutdown') lastShutdown = at || lastShutdown || 1
+    if (record?.type === 'session.shutdown' || record?.type === 'session.task_complete') {
+      lastTerminalAt = at || lastTerminalAt || 1
+    }
   }
-  meta.hasError = lastError > lastShutdown
+
+  meta.waiting = pendingRequests.size > 0 || meta.lifecycle === 'waiting'
+  if (lastTerminalAt >= lastErrorAt) meta.hasError = false
+  return meta
+}
+
+async function eventMeta(entry) {
+  const cached = metaCache.get(entry.id)
+  if (cached && cached.mtime === entry.mtime && cached.size === entry.size) return cached.meta
+
+  let records = []
+  try {
+    const head = await readHead(entry.file, HEAD_BYTES)
+    const tail = entry.size > HEAD_BYTES ? await readTail(entry.file, TAIL_BYTES, entry.size) : ''
+    records = mergeRecords(jsonLines(head), jsonLines(tail))
+  } catch {
+    records = []
+  }
+
+  const meta = deriveEventState(records)
   metaCache.set(entry.id, { mtime: entry.mtime, size: entry.size, meta })
   return meta
 }
@@ -189,17 +294,11 @@ async function scanThreads() {
 
   for (const entry of entries) {
     const workspace = entry.workspace
-    const meta = entry.events ? await eventMeta(entry.events) : {
-      firstPrompt: '',
-      model: '',
-      effort: '',
-      startedAt: 0,
-      hasError: false,
-    }
+    const meta = entry.events ? await eventMeta(entry.events) : deriveEventState([])
     const { cwd, projectPath, project } = projectOf(workspace)
     const createdAt = Date.parse(workspace.created_at || '') || meta.startedAt || 0
     const workspaceUpdatedAt = Date.parse(workspace.updated_at || '') || 0
-    const updatedAt = Math.max(workspaceUpdatedAt, entry.events?.mtime || 0, createdAt)
+    const updatedAt = Math.max(workspaceUpdatedAt, meta.lastEventAt, createdAt)
     const title = String(workspace.name || meta.firstPrompt || 'Untitled thread').slice(0, 240)
 
     threads.push({
@@ -216,8 +315,12 @@ async function scanThreads() {
       createdAt,
       lastActivityAt: updatedAt,
       lastFocusedAt: 0,
-      running: active.has(entry.id) && now - updatedAt < ACTIVE_WINDOW_MS,
-      unread: false,
+      running: active.has(entry.id) &&
+        meta.lifecycle === 'active' &&
+        !meta.waiting &&
+        !meta.hasError &&
+        now - meta.lastEventAt < ACTIVE_WINDOW_MS,
+      unread: meta.waiting,
       hasError: meta.hasError,
       archived: false,
       starred: false,

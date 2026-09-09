@@ -168,7 +168,7 @@ export class Hud {
       ),
       this._toggle('Adaptive quality', 'autoQuality', 'Quietly drops render scale if frames get expensive.'),
       this._slider('Scatter', 'scatterDensity', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
-      this._slider('Max crew', 'maxAgents', 10, 200, 10, (v) => String(v)),
+      this._slider('Max crew', 'maxAgents', 10, 300, 10, (v) => String(v)),
       this._toggle('Stars', 'stars')
     )
     body.appendChild(perf)

@@ -478,6 +478,10 @@ The knobs that actually matter, and why:
   targets. Turning it off on a weak machine gives the memory back.
 - **Shadows** track the camera rather than covering the whole colony, which is worth roughly a
   doubling of effective resolution.
+- **Texture quality** also controls close-up astronaut geometry. Medium, High and Ultra use
+  progressively denser helmet, visor, face, antenna, lamp and tool meshes, while Potato and
+  Low keep the lighter silhouettes. Rebuilding those shared instanced buffers on a setting
+  change preserves the crowd's draw-call shape rather than creating one mesh per astronaut.
 
 What keeps it cheap at rest:
 

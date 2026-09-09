@@ -143,14 +143,37 @@ Verified on a real machine:
 - **GitHub Copilot CLI** — one directory per session in
   `~/.copilot/session-state/<session-id>/`, with `workspace.yaml` for workspace metadata and
   `events.jsonl` for the bounded activity/preview read. Session ids are UUID directory names;
-  `pending-session:*` and other non-session directories are ignored. A live `inuse.<pid>.lock`
-  counts as running only while its PID still exists and the session's event file was updated
-  within the active window. Copilot has no local focus history, so `unread` is always false.
+  `pending-session:*` and other non-session directories are ignored. The adapter reads the
+  bounded head and tail of `events.jsonl`, tolerates malformed/partial lines, and caches parsed
+  metadata by file mtime and size. It reduces the observed lifecycle events as follows:
+  `user.message`, assistant messages/turn starts, and tool or external-tool execution events
+  begin active work;
+  `assistant.turn_end`, `session.task_complete`, `session.shutdown`, and `abort` end active work;
+  `session.error` marks an error; and `session.resume`/a later user message starts a fresh
+  lifecycle. A live `inuse.<pid>.lock` is required as well as a recent active event for
+  `running`, so an old file mtime cannot make a finished session look busy.
+  `permission.requested` (until its matching `permission.completed`) is normalized to
+  `unread`/waiting; explicitly recognized input/prompt request aliases are handled similarly.
+  A later user message, request completion, turn end, task completion, shutdown, or error clears
+  the waiting signal. Unknown event types are ignored conservatively. Copilot has no local focus
+  history, so this `unread` means a concrete pending request, not merely an unseen response.
+  The local records inspected on 2026-09-04 contained the permission pair but no separate
+  user-input request family; those aliases remain defensive and unverified. A normal completed
+  turn is intentionally only idle, because the event stream does not prove that it is waiting
+  for a human rather than simply finished.
   The adapter is read-only: it does not archive, open, or start sessions. The installed CLI can
   resume with `copilot --resume=<session-id>` and start rooted at a directory with
   `copilot -C <directory>`, but both are terminal commands rather than documented desktop deep
   links. Bot Crossing leaves Open/New disabled instead of launching a shell or creating a second
   terminal.
+
+  ACP is not an observer transport. The capability investigation (2026-09-04, read-only; no
+  probe or child process launched) cross-checked the bundled evidence dated 2026-08-19: `copilot
+  --acp` is newline-delimited JSON-RPC over the stdio of a Copilot process the client launches.
+  The launching client owns that pipe, and existing `--server --stdio` children are likewise
+  private to their parent; there is no supported attach or REST endpoint for an arbitrary
+  existing session. Bot Crossing therefore uses the local event stream instead of a fake ACP
+  integration.
 - **Codex CLI** — transcripts in `~/.codex/sessions/YYYY/MM/DD/rollout-<iso>-<uuid>.jsonl`,
   with records shaped `{ timestamp, type, payload }`, and what looks like an index at
   `~/.codex/session_index.jsonl`. Not implemented yet.

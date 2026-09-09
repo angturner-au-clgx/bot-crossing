@@ -75,6 +75,7 @@ export function buildFaceAtlas(size = 512) {
   texture.minFilter = THREE.LinearMipmapLinearFilter
   texture.magFilter = THREE.LinearFilter
   texture.generateMipmaps = true
+  texture.anisotropy = 8
   // Clamping stops a frame from bleeding into its neighbour when mips get small.
   texture.wrapS = THREE.ClampToEdgeWrapping
   texture.wrapT = THREE.ClampToEdgeWrapping
