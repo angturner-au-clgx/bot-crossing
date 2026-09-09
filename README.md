@@ -13,11 +13,64 @@ account, and the only thing it ever writes back is a single archive flag.
 > issues and PRs are welcome but may go unanswered, and forking is an entirely reasonable
 > thing to do. [CONTRIBUTING.md](CONTRIBUTING.md) sets out what to expect.
 
-## Run it
+## Quick start with GitHub Copilot CLI
+
+**Run Bot Crossing locally alongside Copilot CLI.** It automatically reads your local
+Copilot sessions from `~/.copilot/session-state` and shows them as astronauts. No plugin,
+MCP server, or API key is needed for Bot Crossing.
+
+You need **Node.js 20 or newer**, Git, and
+[GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/use-copilot-agents/use-copilot-cli)
+installed and signed in. Bot Crossing has no separate account; Copilot has its own sign-in.
+
+1. Clone this repository and start Copilot from its root:
+
+   ```bash
+   git clone https://github.com/angturner-au-clgx/bot-crossing.git
+   cd bot-crossing
+   copilot
+   ```
+
+   If you already have a checkout, just open a terminal in that folder and run `copilot`.
+   Use `/login` inside Copilot if you need to sign in.
+
+2. Paste this prompt into Copilot:
+
+   ```text
+   Start Bot Crossing from this checkout. Install dependencies with npm install,
+   then run npm run dev as a background task. Keep the dev server running,
+   confirm it responds, and give me the local browser URL printed by Vite.
+   Do not change any source files.
+   ```
+
+   Approve the dependency-install and server-start commands when Copilot asks.
+
+3. Open the URL Copilot reports, normally **http://localhost:5274**. If that port is busy
+   or `PORT` is set, use the actual URL printed by Vite instead.
+
+Keep that Copilot session open so its background server stays running. Continue working
+in Copilot, or start `copilot` in another terminal in any project on the same machine.
+Bot Crossing discovers sessions automatically; you do not need to start each one from
+the Bot Crossing checkout.
+
+**Copilot integration is read-only:** you can inspect sessions in the colony, but its
+Open, New conversation, and Archive actions are unavailable for Copilot. Use Copilot
+itself to start or resume a conversation.
+
+If no Copilot astronauts appear, send a prompt in a local Copilot session and allow the
+colony to refresh. Both processes must run as the same OS user: the adapter reads that
+user's `~/.copilot/session-state`, not sessions on another machine or in another user's home.
+
+### Run it manually instead
+
+From the repository root, run:
 
 ```bash
 npm install && npm run dev
 ```
+
+Open the local URL printed by Vite and leave this terminal running. Start `copilot` in a
+second terminal to work while the colony is open. Stop the dev server with `Ctrl+C`.
 
 `npm run dev` is the whole thing: the API lives inside the Vite dev server, so there is no
 second process. For a built version, `npm start` (build + serve) or `npm run serve` if
